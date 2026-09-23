@@ -1,0 +1,14 @@
+build/
+cmake-build-*/
+*.o
+*.a
+compile_commands.json
+saida_*.txt
+*.csv
+*.log
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+*.swp
+.DS_Store
