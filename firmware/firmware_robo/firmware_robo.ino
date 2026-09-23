@@ -5,10 +5,14 @@
  * aciona as três pontes H. Funciona em malha aberta (sem encoder) e já está preparado
  * para malha fechada quando você confirmar se os motores têm encoder.
  *
- * Quadro recebido (gerado pela ponte_serial):
+ * Quadros recebidos:
+ *   operação (gerado pela ponte_serial):
  *     #V,<esq_mm_s>,<dir_mm_s>,<tras_mm_s>,<me>,<md>,<mt>*<checksum_hex>\n
- *   modos: A = ativo (segue velocidade), I = inércia (coast, motor livre),
- *          F = freio (curto entre os terminais, segura o robô parado)
+ *     modos: A = ativo (segue velocidade), I = inércia (coast, motor livre),
+ *            F = freio (curto entre os terminais, segura o robô parado)
+ *   calibração (PWM direto, sem passar pela conversão de velocidade):
+ *     #P,<pwm_esq>,<pwm_dir>,<pwm_tras>*<checksum_hex>\n
+ *     valores de -255 a 255. Serve para medir V_MAX_MM_S e PWM_MINIMO.
  *
  * Segurança (watchdog): se passar TIMEOUT_MS sem um quadro válido, tudo vai para
  * inércia. É o que evita o robô sair correndo se o cabo cair ou a ponte travar.
@@ -88,6 +92,18 @@ void aplicar(uint8_t i, float v_mm_s, char modo) {
   analogWrite(m.pwm, pwm);
 }
 
+/** Aciona um motor com PWM cru (-255 a 255). Usado só na calibração. */
+void aplicar_pwm(uint8_t i, int pwm) {
+  const Motor& m = MOTORES[i];
+  pwm *= SENTIDO[i];
+  const bool frente = (pwm >= 0);
+  if (pwm < 0) pwm = -pwm;
+  if (pwm > 255) pwm = 255;
+  digitalWrite(m.in1, frente ? HIGH : LOW);
+  digitalWrite(m.in2, frente ? LOW : HIGH);
+  analogWrite(m.pwm, pwm);
+}
+
 void parar_tudo() {
   for (uint8_t i = 0; i < 3; ++i) aplicar(i, 0.0f, 'I');
 }
@@ -105,6 +121,16 @@ bool processar(char* linha) {
   for (char* p = corpo; *p; ++p) chk ^= (uint8_t)(*p);
   const uint8_t recebido = (uint8_t)strtol(estrela + 1, NULL, 16);
   if (chk != recebido) return false;
+
+  if (corpo[0] == 'P') {                  // quadro de calibração: PWM direto
+    int pe = 0, pd = 0, pt = 0;
+    if (sscanf(corpo, "P,%d,%d,%d", &pe, &pd, &pt) != 3) return false;
+    aplicar_pwm(0, pe);
+    aplicar_pwm(1, pd);
+    aplicar_pwm(2, pt);
+    ultimo_quadro_ms = millis();
+    return true;
+  }
 
   if (corpo[0] != 'V') return false;
   int ve = 0, vd = 0, vt = 0;
