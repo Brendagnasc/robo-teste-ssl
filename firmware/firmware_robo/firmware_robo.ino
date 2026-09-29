@@ -1,9 +1,12 @@
 /**
  * firmware_robo.ino
  *
- * Firmware do robô de teste: recebe as velocidades das rodas pela USB serial e
- * aciona as três pontes H. Funciona em malha aberta (sem encoder) e já está preparado
- * para malha fechada quando você confirmar se os motores têm encoder.
+ * Firmware do robô de teste: recebe as velocidades das rodas e aciona as três pontes H.
+ * Funciona em malha aberta (sem encoder) e já está preparado para malha fechada quando
+ * você confirmar se os motores têm encoder.
+ *
+ * Canal de comando: USB serial ou Bluetooth (HC-05), escolhido em USAR_BLUETOOTH abaixo.
+ * O protocolo é o mesmo nos dois casos, então nada mais no sistema muda.
  *
  * Quadros recebidos:
  *   operação (gerado pela ponte_serial):
@@ -22,6 +25,39 @@
  */
 
 #include <Arduino.h>
+
+// ------------------------------------------------------------ canal de comando
+/**
+ * 0 = comandos pela USB (cabo). 1 = comandos pelo HC-05 (Bluetooth).
+ *
+ * Com Bluetooth, o módulo NÃO vai nos pinos 0 e 1: eles são os mesmos do USB e
+ * impediriam o upload do sketch. Usamos SoftwareSerial em outros dois pinos, e a
+ * USB fica livre para gravar e para imprimir mensagens de depuração.
+ *
+ * Ligação do HC-05:
+ *   VCC  -> 5V
+ *   GND  -> GND
+ *   TXD  -> pino 10 (RX do Arduino)
+ *   RXD  -> pino 9  (TX do Arduino) ATRAVÉS DE DIVISOR: 1k em série, 2k para o GND.
+ *           O TX do Arduino é 5V e o RXD do módulo é 3,3V. Ligar direto degrada o módulo.
+ *
+ * 38400 bps, e não 115200: SoftwareSerial em AVR de 16 MHz erra bytes acima de ~38400.
+ * A conta fecha: quadro de 30 bytes a 50 Hz são 1500 B/s, contra 3840 B/s disponíveis.
+ * Configure o módulo uma vez, no modo AT, com AT+UART=38400,0,0
+ */
+#define USAR_BLUETOOTH 1
+
+#if USAR_BLUETOOTH
+  #include <SoftwareSerial.h>
+  const uint8_t PINO_BT_RX = 10;   // liga no TXD do HC-05
+  const uint8_t PINO_BT_TX = 9;    // liga no RXD do HC-05, via divisor
+  const long    BAUD_COMANDO = 38400;
+  SoftwareSerial bluetooth(PINO_BT_RX, PINO_BT_TX);
+  #define PORTA bluetooth
+#else
+  const long BAUD_COMANDO = 115200;
+  #define PORTA Serial
+#endif
 
 // ----------------------------------------------------------------- hardware
 struct Motor {
@@ -53,7 +89,15 @@ const int8_t SENTIDO[3] = { +1, +1, +1 };
  */
 const float V_MAX_MM_S = 900.0f;
 const int   PWM_MINIMO = 45;
+/**
+ * Watchdog. Com cabo, 200 ms basta. Com Bluetooth, o rádio engasga de vez em quando e
+ * 200 ms derrubaria os motores no meio de um movimento normal, por isso 300 ms.
+ */
+#if USAR_BLUETOOTH
+const unsigned long TIMEOUT_MS = 300;
+#else
 const unsigned long TIMEOUT_MS = 200;
+#endif
 
 // ------------------------------------------------------------------ estado
 char  buffer[64];
@@ -151,13 +195,21 @@ void setup() {
     pinMode(MOTORES[i].pwm, OUTPUT);
   }
   parar_tudo();
-  Serial.begin(115200);
+
+  Serial.begin(115200);          // USB: sempre disponível para depuração
+#if USAR_BLUETOOTH
+  bluetooth.begin(BAUD_COMANDO);
+  Serial.println(F("comandos pelo HC-05 em 38400 bps"));
+#else
+  Serial.println(F("comandos pela USB em 115200 bps"));
+#endif
+
   ultimo_quadro_ms = millis();
 }
 
 void loop() {
-  while (Serial.available()) {
-    const char c = (char)Serial.read();
+  while (PORTA.available()) {
+    const char c = (char)PORTA.read();
     if (c == '\n') {
       buffer[n_buffer] = '\0';
       processar(buffer);
