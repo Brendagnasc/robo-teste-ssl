@@ -68,11 +68,36 @@ cmake -B build && cmake --build build
 ./build/teste_entrada                   # ganho da camada de entrada
 python3 testes/teste_ponte.py           # ponta a ponta, com serial virtual
 
-# com o robô conectado
+# com o robô por cabo
 ./build/ponte_serial --serial /dev/ttyACM0 --milimetros --latencia 0.045
+
+# com o robô por Bluetooth (HC-05)
+./scripts/bluetooth_conectar.sh 98:D3:31:XX:XX:XX
+./build/ponte_serial --serial /dev/rfcomm0 --bluetooth --milimetros --latencia 0.045
 ```
 
 No WSL, `/dev/ttyACM0` só aparece depois de anexar o dispositivo com `usbipd-win`.
+
+## Canal de comando: cabo ou Bluetooth
+
+O protocolo é o mesmo nos dois casos, então trocar de canal não muda o controle.
+
+| | cabo USB | Bluetooth (HC-05) |
+|---|---|---|
+| porta no PC | `/dev/ttyACM0` | `/dev/rfcomm0` |
+| velocidade | 115200 bps | 38400 bps |
+| envio de quadros | 100 Hz | 50 Hz (`--bluetooth`) |
+| watchdog do firmware | 200 ms | 300 ms |
+| pinos no Arduino | 0 e 1 (USB) | 10 (RX) e 9 (TX), via `SoftwareSerial` |
+
+Escolha o canal em `USAR_BLUETOOTH`, no topo do `.ino`. O HC-05 não vai nos pinos 0 e 1,
+que são os do USB e impediriam o upload: fica em `SoftwareSerial`, deixando a USB livre
+para gravar e depurar. O RXD do módulo é 3,3 V e precisa de divisor resistivo (1k em
+série, 2k para o GND) no TX do Arduino.
+
+O WSL não enxerga o Bluetooth interno da máquina, e o `usbipd` não resolve isso. Para
+usar Bluetooth, rode a ponte em Linux nativo ou use um dongle Bluetooth USB anexado
+ao WSL.
 
 ## Resultados medidos
 
