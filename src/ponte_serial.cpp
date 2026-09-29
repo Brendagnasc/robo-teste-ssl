@@ -17,7 +17,14 @@
  *
  * Uso:
  *     ./ponte_serial --serial /dev/ttyACM0 --baud 115200 --porta-udp 5005
- *     ./ponte_serial --serial /dev/ttyACM0 --dist-parada 0.10
+ *     ./ponte_serial --serial /dev/rfcomm0 --bluetooth          (HC-05 pareado)
+ *
+ * Bluetooth: a porta rfcomm se comporta como uma serial comum, então nada muda no
+ * código. O que muda é a taxa de envio. O Bluetooth clássico trabalha em janelas de
+ * 7,5 ms e tem jitter, e o HC-05 via SoftwareSerial roda a 38400 bps, então mandar
+ * 100 quadros por segundo só enche fila e faz o robô responder ao passado. A opção
+ * --bluetooth baixa o envio para 50 Hz. O controle continua a 200 Hz internamente:
+ * só o envio é decimado.
  *
  * Observação para WSL: o Linux do WSL não enxerga /dev/ttyACM0 direto, é preciso
  * anexar o dispositivo com usbipd-win. Rodando no Windows ou em Linux nativo, é direto.
@@ -148,7 +155,7 @@ int main(int argc, char** argv) {
     std::string caminho_serial = "/dev/ttyACM0";
     int baud = 115200, porta_udp = 5005, hz_controle = 200, hz_serial = 100;
     float dist_parada = 0.0f;
-    bool verboso = true;
+    bool verboso = true, bluetooth = false;
 
     // Contrato com o grupo da visão (ver INTERFACE_VISAO.md)
     ConfigEntrada cfg;
@@ -165,6 +172,7 @@ int main(int argc, char** argv) {
         else if (a == "--graus")        { cfg.angulo_em_graus = true; --i; }
         else if (a == "--inverter-y")   { cfg.inverter_y = true; --i; }
         else if (a == "--latencia")     cfg.latencia_s = (float)std::atof(argv[++i]);
+        else if (a == "--bluetooth")    { hz_serial = 50; baud = 38400; bluetooth = true; --i; }
         else if (a == "--silencioso")   { verboso = false; --i; }
     }
 
@@ -189,10 +197,13 @@ int main(int argc, char** argv) {
     if (fd_udp < 0) { std::fprintf(stderr, "Não abri o UDP %d\n", porta_udp); return 1; }
 
     std::signal(SIGINT, tratar_sinal);
-    std::printf("ponte ativa: UDP %d -> %s @ %d bps | v_max %.2f m/s | a %.2f/%.2f m/s^2\n",
+    std::printf("ponte ativa: UDP %d -> %s @ %d bps (%s, envio a %d Hz)\n"
+                "v_max %.2f m/s | a %.2f/%.2f m/s^2\n",
                 porta_udp, caminho_serial.c_str(), baud,
+                bluetooth ? "bluetooth" : "cabo", hz_serial,
                 robo.limites().v_max, robo.limites().a_acel_max, robo.limites().a_desac_max);
-    std::this_thread::sleep_for(std::chrono::seconds(2));  // Arduino reinicia ao abrir a porta
+    // Cabo: o Arduino reinicia ao abrir a porta. Bluetooth: o enlace leva um instante.
+    std::this_thread::sleep_for(std::chrono::seconds(2));
 
     const auto periodo = std::chrono::microseconds(1000000 / hz_controle);
     const float dt = 1.0f / (float)hz_controle;
