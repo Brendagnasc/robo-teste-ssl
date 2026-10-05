@@ -8,6 +8,12 @@ achar o PWM_MINIMO e testar o watchdog.
 
 Requer pyserial:  pip install pyserial
 
+Porta: tem que ser o canal de COMANDO do firmware (USAR_BLUETOOTH no .ino).
+  USAR_BLUETOOTH 0 -> /dev/ttyACM0 (cabo USB)
+  USAR_BLUETOOTH 1 -> /dev/rfcomm0 (HC-05, ver scripts/bluetooth_conectar.sh)
+Com o firmware em Bluetooth, a USB é só depuração: quadros mandados por ela são
+ignorados e o robô não se mexe. Os exemplos abaixo usam o cabo; troque a porta.
+
 Comandos:
 
   # roda a 300 mm/s por 2 s, robô SUSPENSO, para conferir o sentido de cada roda
@@ -51,7 +57,7 @@ def quadro(corpo: str) -> bytes:
 
 
 def enviar(ser, corpo, duracao, hz=50):
-    """Repete o quadro durante 'duracao'. Precisa repetir: o watchdog corta em 200 ms."""
+    """Repete o quadro durante 'duracao'. Precisa repetir: o watchdog corta em 200 ms (cabo) ou 300 ms (Bluetooth)."""
     fim = time.time() + duracao
     while time.time() < fim:
         ser.write(quadro(corpo))
@@ -73,6 +79,9 @@ def main():
     ap.add_argument("--baud", type=int, default=115200)
     args = ap.parse_args()
 
+    if "rfcomm" not in args.porta:
+        print("aviso: porta USB. Se o firmware estiver com USAR_BLUETOOTH 1, os comandos\n"
+              "       por aqui são ignorados; use /dev/rfcomm0.")
     ser = serial.Serial(args.porta, args.baud, timeout=0.1)
     time.sleep(2.0)   # o Arduino reinicia quando a porta abre
 
@@ -111,7 +120,7 @@ def main():
 
         elif args.comando == "watchdog":
             print("Acionando por 2 s e depois PARANDO de enviar.")
-            print("As rodas têm que parar em até 200 ms sozinhas.")
+            print("As rodas têm que parar sozinhas em até 200 ms (cabo) ou 300 ms (Bluetooth).")
             enviar(ser, "V,200,200,0,A,A,I", 2.0)
             print("envio interrompido agora")
             time.sleep(2.0)
