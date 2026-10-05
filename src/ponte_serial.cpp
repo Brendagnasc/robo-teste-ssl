@@ -160,20 +160,47 @@ int main(int argc, char** argv) {
     // Contrato com o grupo da visão (ver INTERFACE_VISAO.md)
     ConfigEntrada cfg;
 
-    for (int i = 1; i < argc - 1; ++i) {
+    bool hz_serial_explicito = false;
+    for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
-        if (a == "--serial")            caminho_serial = argv[++i];
-        else if (a == "--baud")         baud = std::atoi(argv[++i]);
-        else if (a == "--porta-udp")    porta_udp = std::atoi(argv[++i]);
-        else if (a == "--hz")           hz_controle = std::atoi(argv[++i]);
-        else if (a == "--hz-serial")    hz_serial = std::atoi(argv[++i]);
-        else if (a == "--dist-parada")  dist_parada = (float)std::atof(argv[++i]);
-        else if (a == "--milimetros")   { cfg.escala_posicao = 0.001f; --i; }
-        else if (a == "--graus")        { cfg.angulo_em_graus = true; --i; }
-        else if (a == "--inverter-y")   { cfg.inverter_y = true; --i; }
-        else if (a == "--latencia")     cfg.latencia_s = (float)std::atof(argv[++i]);
-        else if (a == "--bluetooth")    { hz_serial = 50; baud = 38400; bluetooth = true; --i; }
-        else if (a == "--silencioso")   { verboso = false; --i; }
+
+        // Flags sem valor
+        if (a == "--milimetros")      { cfg.escala_posicao = 0.001f; continue; }
+        if (a == "--graus")           { cfg.angulo_em_graus = true; continue; }
+        if (a == "--inverter-y")      { cfg.inverter_y = true; continue; }
+        if (a == "--bluetooth")       { bluetooth = true; continue; }
+        if (a == "--silencioso")      { verboso = false; continue; }
+
+        // Opções com valor
+        const bool conhecida = a == "--serial" || a == "--baud" || a == "--porta-udp" ||
+                               a == "--hz" || a == "--hz-serial" || a == "--dist-parada" ||
+                               a == "--latencia";
+        if (!conhecida) {
+            std::fprintf(stderr, "Opção desconhecida: %s\n", a.c_str());
+            return 1;
+        }
+        if (i + 1 >= argc) {
+            std::fprintf(stderr, "Falta o valor de %s\n", a.c_str());
+            return 1;
+        }
+        const char* valor = argv[++i];
+        if (a == "--serial")            caminho_serial = valor;
+        else if (a == "--baud")         baud = std::atoi(valor);
+        else if (a == "--porta-udp")    porta_udp = std::atoi(valor);
+        else if (a == "--hz")           hz_controle = std::atoi(valor);
+        else if (a == "--hz-serial")    { hz_serial = std::atoi(valor); hz_serial_explicito = true; }
+        else if (a == "--dist-parada")  dist_parada = (float)std::atof(valor);
+        else if (a == "--latencia")     cfg.latencia_s = (float)std::atof(valor);
+    }
+    // Aplicado depois do laço para não depender da ordem: --hz-serial explícito vence.
+    // A taxa do lado do PC não importa no rfcomm; 38400 é só o que aparece no log.
+    if (bluetooth) {
+        if (!hz_serial_explicito) hz_serial = 50;
+        baud = 38400;
+    }
+    if (hz_controle <= 0 || hz_serial <= 0) {
+        std::fprintf(stderr, "--hz e --hz-serial precisam ser maiores que zero\n");
+        return 1;
     }
 
     // Parâmetros do robô de teste: ajuste massa, bitola e rodas aos valores medidos
@@ -197,6 +224,7 @@ int main(int argc, char** argv) {
     if (fd_udp < 0) { std::fprintf(stderr, "Não abri o UDP %d\n", porta_udp); return 1; }
 
     std::signal(SIGINT, tratar_sinal);
+    std::signal(SIGTERM, tratar_sinal);   // kill / terminate também passam pela parada com freio
     std::printf("ponte ativa: UDP %d -> %s @ %d bps (%s, envio a %d Hz)\n"
                 "v_max %.2f m/s | a %.2f/%.2f m/s^2\n",
                 porta_udp, caminho_serial.c_str(), baud,
@@ -224,9 +252,13 @@ int main(int argc, char** argv) {
         }
         entrada.avancar(dt);
 
-        // O controle recebe a pose estimada para AGORA, não a medida atrasada
+        // O controle recebe a pose estimada para AGORA, não a medida atrasada.
+        // Só repassa enquanto o último frame é recente: a predição é chamada a cada
+        // ciclo, então sem esse corte o timeout_visao_s do controle nunca dispararia.
         const PoseEstimada& p = entrada.pose();
-        if (p.valida && tem_alvo) robo.atualizar_visao(p.x, p.y, p.theta, alvo_x, alvo_y);
+        if (p.valida && tem_alvo && p.idade_s <= ctrl.timeout_visao_s) {
+            robo.atualizar_visao(p.x, p.y, p.theta, alvo_x, alvo_y);
+        }
 
         const ComandoRodas c = robo.tomar_decisao(dt);
         if (ciclo % div_serial == 0) {
