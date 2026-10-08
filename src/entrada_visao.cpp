@@ -47,9 +47,13 @@ bool EntradaVisao::nova_medida(float x_cru, float y_cru, float theta_cru) {
         return true;
     }
 
-    // Intervalo real entre frames, suavizado (a visão nem sempre é regular)
-    const float dt_m = (t_desde_medida_ > 1.0e-4f) ? t_desde_medida_ : dt_medida_;
-    dt_medida_ = 0.8f * dt_medida_ + 0.2f * dt_m;
+    // Intervalo real entre frames, suavizado (a visão nem sempre é regular).
+    // Buraco longo (vários frames perdidos) não é a taxa da visão: entrar na média
+    // inflaria dt_medida_ e enfraqueceria a correção de velocidade por vários frames.
+    const float dt_m = t_desde_medida_;
+    if (dt_m > 1.0e-4f && dt_m < 3.0f * dt_medida_) {
+        dt_medida_ = 0.8f * dt_medida_ + 0.2f * dt_m;
+    }
 
     // A medida vale para t - latencia, então a comparação tem que ser feita LÁ.
     // Recua a estimativa pela latência, compara, corrige e projeta de volta para agora.
@@ -102,19 +106,22 @@ bool EntradaVisao::nova_medida(float x_cru, float y_cru, float theta_cru) {
 }
 
 void EntradaVisao::avancar(float dt) {
+    pose_.idade_s += dt;
     if (!iniciado_) return;
     t_desde_medida_ += dt;
-    pose_.idade_s += dt;
 
     // Entre frames, a estimativa anda sozinha com a velocidade estimada
     pose_.x += pose_.vx * dt;
     pose_.y += pose_.vy * dt;
     pose_.theta = normalizar_angulo(pose_.theta + pose_.omega * dt);
 
-    // Sem frame há tempo demais: a predição já não vale nada
+    // Sem frame há tempo demais: a predição já não vale nada. Reinicia o filtro para
+    // que o próximo frame seja adotado direto, e não comparado com uma pose velha
+    // (o que o faria ser descartado como salto se o robô tiver se movido).
     if (pose_.idade_s > cfg_.timeout_s) {
-        pose_.valida = false;
-        pose_.vx = pose_.vy = pose_.omega = 0.0f;
+        const float idade = pose_.idade_s;
+        reiniciar();
+        pose_.idade_s = idade;   // mantém a idade para a telemetria
     }
 }
 

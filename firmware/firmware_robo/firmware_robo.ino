@@ -124,12 +124,18 @@ void aplicar(uint8_t i, float v_mm_s, char modo) {
   const bool frente = (v >= 0.0f);
   v = fabs(v);
 
-  int pwm = 0;
-  if (v > 1.0f) {                         // ignora comandos residuais
-    float f = v / V_MAX_MM_S;
-    if (f > 1.0f) f = 1.0f;
-    pwm = PWM_MINIMO + (int)((255 - PWM_MINIMO) * f);
+  if (v <= 1.0f) {                        // ignora comandos residuais
+    // Velocidade zero vira inércia. Deixar IN1/IN2 em sentido com PWM 0 seria freio
+    // no TB6612 e roda livre no L298N; quem quer freio manda o modo F.
+    digitalWrite(m.in1, LOW);
+    digitalWrite(m.in2, LOW);
+    analogWrite(m.pwm, 0);
+    return;
   }
+
+  float f = v / V_MAX_MM_S;
+  if (f > 1.0f) f = 1.0f;
+  const int pwm = PWM_MINIMO + (int)((255 - PWM_MINIMO) * f);
 
   digitalWrite(m.in1, frente ? HIGH : LOW);
   digitalWrite(m.in2, frente ? LOW : HIGH);
