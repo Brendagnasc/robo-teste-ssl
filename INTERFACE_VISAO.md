@@ -54,6 +54,10 @@ em multicast `224.5.23.2:10020`, como o SSL-Vision. A ponte já lê esse formato
 - `t_capture` é quando a imagem chegou e `t_sent` é quando o pacote saiu, os dois no
   relógio do PC de vocês. Usamos a diferença para saber o processamento de cada frame.
 
+O `visao/saida_ssl.py` do nosso repositório já monta e manda esse pacote, só com a
+biblioteca padrão do Python. E o `visao/visao_sala.py` faz o caminho inteiro com a
+marcação de três círculos de vocês, para servir de referência (ver o README).
+
 Quando o robô ou a bola não for detectado no frame, **não mandem o último valor
 conhecido**. Ou omitam o campo, ou mandem `confianca = 0`. Repetir a última posição
 como se fosse nova nos impede de distinguir "parado" de "perdido", e nosso controle
