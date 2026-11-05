@@ -256,7 +256,9 @@ int main(int argc, char** argv) {
         // Só repassa enquanto o último frame é recente: a predição é chamada a cada
         // ciclo, então sem esse corte o timeout_visao_s do controle nunca dispararia.
         const PoseEstimada& p = entrada.pose();
-        if (p.valida && tem_alvo && p.idade_s <= ctrl.timeout_visao_s) {
+        if (entrada.visao_congelada()) {
+            robo.perder_visao();               // visão repetindo a pose: freia já
+        } else if (p.valida && tem_alvo && p.idade_s <= ctrl.timeout_visao_s) {
             robo.atualizar_visao(p.x, p.y, p.theta, alvo_x, alvo_y);
         }
 
@@ -268,13 +270,14 @@ int main(int argc, char** argv) {
         t_log += dt;
         if (verboso && t_log >= 0.5f) {
             t_log = 0.0f;
-            std::printf("%-12s d=%.3f m  erro=%+.1f deg  v=%.2f m/s  visao: %d ok / %d ruins, "
-                        "idade %.0f ms  rodas: %.2f %.2f %.2f\n",
+            std::printf("%-12s d=%.3f m  erro=%+.1f deg  v=%.2f m/s  visao: %d ok / %d ruins / "
+                        "%d repetidos, idade %.0f ms  rodas: %.2f %.2f %.2f%s\n",
                         nome_estado(robo.estado()), robo.distancia(),
                         rad_para_grau(robo.erro_angulo()), robo.velocidade_linear(),
                         entrada.medidas_aceitas(), entrada.medidas_descartadas(),
-                        entrada.pose().idade_s * 1000.0f,
-                        c.v[RODA_ESQ], c.v[RODA_DIR], c.v[RODA_TRAS]);
+                        entrada.medidas_congeladas(), entrada.pose().idade_s * 1000.0f,
+                        c.v[RODA_ESQ], c.v[RODA_DIR], c.v[RODA_TRAS],
+                        entrada.visao_congelada() ? "  [VISAO TRAVADA]" : "");
             std::fflush(stdout);
         }
 

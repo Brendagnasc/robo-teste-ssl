@@ -15,6 +15,7 @@ inteiro: ALINHAMENTO, DESLOCAMENTO, FRENAGEM, PARADO.
 import math
 import os
 import pty
+import random
 import socket
 import subprocess
 import sys
@@ -57,7 +58,11 @@ def main():
     print("   t(s)   x      y     theta    d(m)   quadro serial")
 
     while time.time() - t0 < 12.0:
-        sock.sendto(f"pose {x:.4f} {y:.4f} {theta:.4f} {ALVO[0]:.4f} {ALVO[1]:.4f} "
+        # Ruído de câmera real (~1 mm, ~0,3 grau). Sem ele, pose idêntica em frames
+        # seguidos com o robô parado seria tratada como visão travada.
+        xr, yr = x + random.gauss(0, 0.001), y + random.gauss(0, 0.001)
+        tr = theta + random.gauss(0, 0.005)
+        sock.sendto(f"pose {xr:.4f} {yr:.4f} {tr:.4f} {ALVO[0]:.4f} {ALVO[1]:.4f} "
                     f"{time.time():.3f}".encode(), ("127.0.0.1", 5005))
         time.sleep(dt)
 

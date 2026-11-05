@@ -160,6 +160,12 @@ public:
     void atualizar_visao(float x_robo, float y_robo, float theta_robo,
                          float x_alvo, float y_alvo);
 
+    /**
+     * A camada de entrada declarou a visão inválida (ex.: travada repetindo a pose).
+     * Freia na hora, sem esperar timeout_visao_s. Volta ao normal no próximo atualizar_visao().
+     */
+    void perder_visao() { visao_ok_ = false; }
+
     /** FSM. Chamar no laço de controle com período dt (ex.: 200 Hz -> dt = 0.005). */
     ComandoRodas tomar_decisao(float dt);
 

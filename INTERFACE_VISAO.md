@@ -49,6 +49,12 @@ conhecido**. Ou omitam o campo, ou mandem `confianca = 0`. Repetir a última pos
 como se fosse nova nos impede de distinguir "parado" de "perdido", e nosso controle
 precisa dessa diferença para acionar a parada de segurança.
 
+Do nosso lado, frames com `x`, `y` e `theta` **idênticos** aos do frame anterior são
+tratados como repetidos (visão travada): não contam como medida nova, e com 6 seguidos
+o robô freia. Câmera real sempre tem ruído, então isso não acontece com dado de
+verdade, desde que vocês **não arredondem** a pose (mandem com pelo menos 0,1 mm e
+0,001 rad de resolução, sem filtro que "segure" o valor quando o robô está parado).
+
 ## 4. O que fazemos com o dado, e por que a latência importa
 
 O controle roda a 200 Hz e precisa da pose do instante atual. A visão entrega a pose
