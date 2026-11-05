@@ -51,6 +51,11 @@ if(Protobuf_FOUND)
 
   target_link_libraries(ponte_serial PRIVATE visao_ssl)
   target_compile_definitions(ponte_serial PRIVATE COM_VISAO_SSL)
+
+  # Leitura dos pacotes: time, id, confiança, várias câmeras, tempo de processamento
+  add_executable(teste_visao_ssl src/teste_visao_ssl.cpp)
+  target_include_directories(teste_visao_ssl PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+  target_link_libraries(teste_visao_ssl PRIVATE visao_ssl controle ${Protobuf_LIBRARIES})
 else()
   message(STATUS "protobuf não encontrado: ponte_serial sem a entrada SSL")
 endif()
