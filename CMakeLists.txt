@@ -31,3 +31,11 @@ target_link_libraries(teste_seguranca PRIVATE controle)
 # Ponte: visão (UDP) -> controle -> robô (USB serial)
 add_executable(ponte_serial src/ponte_serial.cpp)
 target_link_libraries(ponte_serial PRIVATE controle)
+
+# Robô simulado no Gazebo: plugin que faz o papel do firmware, dos motores e da câmera,
+# para a ponte_serial rodar contra o simulador. Só entra se o Gazebo Harmonic estiver instalado.
+find_package(gz-sim8 QUIET)
+find_package(gz-plugin2 QUIET COMPONENTS register)
+if(gz-sim8_FOUND AND gz-plugin2_FOUND)
+  add_subdirectory(simulacao gazebo)   # build/simulacao já é o executável acima
+endif()

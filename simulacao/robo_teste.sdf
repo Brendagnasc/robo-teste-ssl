@@ -1,0 +1,275 @@
+<?xml version="1.0" ?>
+<!--
+  robo_teste.sdf
+
+  Modelo do robô de três rodas no Gazebo Harmonic, com os MESMOS números do
+  ParametrosFisicos em include/ssl_controle.hpp. Se um valor mudar lá, mude aqui.
+
+  Convenções, iguais às do código:
+    - origem do modelo = ponto médio do eixo das rodas laterais (o ponto que a visão
+      reporta e em torno do qual o robô gira);
+    - x para frente, y para a esquerda, z para cima;
+    - o chassi fica 2 cm atrás da origem, que é o offset_cg_m: é isso que põe carga
+      na roda traseira e permite que ela gire o robô.
+
+  Rodar, com a ponte_serial de verdade ligada no robô simulado:
+    ./simulacao/rodar_gazebo.sh                 com janela
+    ./simulacao/rodar_gazebo.sh --sem-janela    só o servidor, mais leve
+
+  Arraste a bola (modelo "alvo") com a ferramenta de mover, tecla T, e o robô vai atrás.
+
+  Comandar as rodas na mão, com a mesma ferramenta do robô real (outro terminal):
+    ./simulacao/rodar_gazebo.sh --sem-ponte
+    python3 testes/robo_bancada.py /tmp/robo_teste_serial vel 300 300 0
+    python3 testes/robo_bancada.py /tmp/robo_teste_serial vel 0 0 200 --modos I I A
+
+  Ver a pose verdadeira (a câmera simulada manda a mesma, com ruído e atraso):
+    gz topic -e -t /model/robo_teste/odometry
+-->
+<sdf version="1.9">
+  <world name="sala">
+
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system"
+            name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster"/>
+
+    <light type="directional" name="sol">
+      <pose>0 0 10 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <direction>-0.5 0.1 -0.9</direction>
+    </light>
+
+    <!-- Chão da sala -->
+    <model name="chao">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+          <surface><friction><ode><mu>1.0</mu><mu2>1.0</mu2></ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>20 20</size></plane></geometry>
+          <material><ambient>0.8 0.8 0.8 1</ambient><diffuse>0.8 0.8 0.8 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================================================================= -->
+    <model name="robo_teste">
+      <pose>0 0 0 0 0 0</pose>
+
+      <!--
+        CHASSI
+        Cilindro de 9 cm de raio e 6 cm de altura, centro a 4 cm do chão
+        (altura_cg_m) e 2 cm atrás da origem (offset_cg_m).
+        Massa: 2,5 kg do robô menos 3 x 0,05 kg das rodas.
+        Inércia de cilindro sólido: izz = m*r^2/2, ixx = iyy = m*(3r^2 + h^2)/12.
+      -->
+      <link name="chassi">
+        <pose>-0.02 0 0.04 0 0 0</pose>
+        <inertial>
+          <mass>2.35</mass>
+          <inertia>
+            <ixx>0.005464</ixx><iyy>0.005464</iyy><izz>0.009518</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><cylinder><radius>0.09</radius><length>0.06</length></cylinder></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.09</radius><length>0.06</length></cylinder></geometry>
+          <material><ambient>0.2 0.3 0.6 1</ambient><diffuse>0.2 0.4 0.8 1</diffuse></material>
+        </visual>
+        <!-- Marca da frente, para você enxergar o theta na tela -->
+        <visual name="marca_frente">
+          <pose>0.07 0 0.031 0 0 0</pose>
+          <geometry><box><size>0.04 0.02 0.004</size></box></geometry>
+          <material><ambient>1 0.9 0.2 1</ambient><diffuse>1 0.9 0.2 1</diffuse></material>
+        </visual>
+      </link>
+
+      <!--
+        RODAS LATERAIS
+        Convencionais: giram em torno de y e NÃO deslizam para o lado. É essa
+        resistência lateral que segura o robô quando a traseira o faz girar.
+        mu alto nas duas direções.
+        Posição: bitola 0,15 m, então 0,075 m de cada lado. z = raio da roda.
+      -->
+      <link name="roda_esq">
+        <pose>0 0.075 0.027 1.5708 0 0</pose>
+        <inertial>
+          <mass>0.05</mass>
+          <inertia>
+            <ixx>0.0000108</ixx><iyy>0.0000108</iyy><izz>0.0000182</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><cylinder><radius>0.027</radius><length>0.02</length></cylinder></geometry>
+          <surface><friction><ode>
+            <mu>0.8</mu><mu2>0.8</mu2>
+          </ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.027</radius><length>0.02</length></cylinder></geometry>
+          <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.2 0.2 0.2 1</diffuse></material>
+        </visual>
+      </link>
+
+      <link name="roda_dir">
+        <pose>0 -0.075 0.027 1.5708 0 0</pose>
+        <inertial>
+          <mass>0.05</mass>
+          <inertia>
+            <ixx>0.0000108</ixx><iyy>0.0000108</iyy><izz>0.0000182</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><cylinder><radius>0.027</radius><length>0.02</length></cylinder></geometry>
+          <surface><friction><ode>
+            <mu>0.8</mu><mu2>0.8</mu2>
+          </ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.027</radius><length>0.02</length></cylinder></geometry>
+          <material><ambient>0.1 0.1 0.1 1</ambient><diffuse>0.2 0.2 0.2 1</diffuse></material>
+        </visual>
+      </link>
+
+      <!--
+        RODA TRASEIRA OMNI
+        O Gazebo não tem roda omni pronta. O truque é atrito anisotrópico:
+        a roda gira em torno de x (ou seja, rola na direção y, empurrando o giro),
+        e os roletes são simulados dando atrito quase zero na direção x.
+          fdir1 = 0 0 1  -> direção dos roletes, mu = 0,05 (escorrega)
+          mu2             -> direção de rolagem, 0,5 (agarra, como roda omni real)
+        É isso que deixa o robô andar para frente com a traseira solta, sem arrastar.
+        O fdir1 vale no referencial da colisão, que está girado 90 graus em y: o z
+        dela é o x do robô. Com 1 0 0 ele apontava para o chão, o Gazebo escolhia
+        uma direção qualquer e a traseira arrastava (0,44 m/s em vez de 0,53).
+      -->
+      <link name="roda_tras">
+        <pose>-0.07 0 0.027 0 1.5708 0</pose>
+        <inertial>
+          <mass>0.05</mass>
+          <inertia>
+            <ixx>0.0000108</ixx><iyy>0.0000108</iyy><izz>0.0000182</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><cylinder><radius>0.027</radius><length>0.02</length></cylinder></geometry>
+          <surface><friction><ode>
+            <mu>0.05</mu><mu2>0.5</mu2>
+            <fdir1>0 0 1</fdir1>
+          </ode></friction></surface>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.027</radius><length>0.02</length></cylinder></geometry>
+          <material><ambient>0.6 0.3 0.1 1</ambient><diffuse>0.8 0.4 0.1 1</diffuse></material>
+        </visual>
+      </link>
+
+      <!-- Juntas: as rodas giram, o chassi é o corpo -->
+      <joint name="junta_esq" type="revolute">
+        <parent>chassi</parent><child>roda_esq</child>
+        <axis>
+          <xyz expressed_in="__model__">0 1 0</xyz>
+          <limit><lower>-1e16</lower><upper>1e16</upper></limit>
+          <dynamics><friction>0.001</friction></dynamics>
+        </axis>
+      </joint>
+
+      <joint name="junta_dir" type="revolute">
+        <parent>chassi</parent><child>roda_dir</child>
+        <axis>
+          <xyz expressed_in="__model__">0 1 0</xyz>
+          <limit><lower>-1e16</lower><upper>1e16</upper></limit>
+          <dynamics><friction>0.001</friction></dynamics>
+        </axis>
+      </joint>
+
+      <joint name="junta_tras" type="revolute">
+        <parent>chassi</parent><child>roda_tras</child>
+        <axis>
+          <xyz expressed_in="__model__">1 0 0</xyz>
+          <limit><lower>-1e16</lower><upper>1e16</upper></limit>
+          <dynamics><friction>0.001</friction></dynamics>
+        </axis>
+      </joint>
+
+      <!--
+        Hardware simulado: firmware, motores e câmera (simulacao/robo_simulado.cpp).
+        Motores por TORQUE, calculado a cada passo de 1 ms, e não cinemáticos: a roda
+        patina se o comando pedir mais do que a aderência permite, que é o que
+        queremos testar do cálculo de limites. E existe inércia de verdade (roda
+        livre), que o JointController não tem: nele, pedir 0 rad/s segura a roda.
+      -->
+      <plugin filename="robo_simulado" name="robo_teste::RoboSimulado">
+        <!-- motor e roda, como no ParametrosFisicos e no firmware_robo.ino -->
+        <raio_roda_m>0.027</raio_roda_m>
+        <torque_max_Nm>0.32</torque_max_Nm>  <!-- 0,10 N.m x redução 3,6 x eficiência 0,9 -->
+        <ganho_Nms>0.02</ganho_Nms>          <!-- acima de 0,036 o laço diverge -->
+        <v_max_m_s>0.9</v_max_m_s>           <!-- V_MAX_MM_S -->
+        <watchdog_s>0.2</watchdog_s>         <!-- TIMEOUT_MS: 0,2 por cabo, 0,3 por Bluetooth -->
+        <serial>/tmp/robo_teste_serial</serial>
+
+        <!-- câmera: o que o grupo da visão vai entregar (INTERFACE_VISAO.md) -->
+        <alvo>alvo</alvo>
+        <visao_porta>5005</visao_porta>
+        <visao_milimetros>true</visao_milimetros>
+        <visao_hz>60</visao_hz>
+        <visao_latencia_s>0.040</visao_latencia_s>
+        <visao_ruido_pos_m>0.002</visao_ruido_pos_m>
+        <visao_ruido_ang_rad>0.005</visao_ruido_ang_rad>
+        <visao_perda_frames>0.0</visao_perda_frames>        <!-- 0,05: 5% dos frames somem -->
+        <visao_deteccao_errada>0.0</visao_deteccao_errada>  <!-- 0,01: 1% com salto de 0,5 a 1 m -->
+      </plugin>
+
+      <!-- Pose verdadeira, sem ruído nem atraso: para comparar com a estimativa da ponte -->
+      <plugin filename="gz-sim-odometry-publisher-system"
+              name="gz::sim::systems::OdometryPublisher">
+        <odom_frame>sala</odom_frame>
+        <robot_base_frame>robo_teste</robot_base_frame>
+        <odom_publish_frequency>60</odom_publish_frequency>
+      </plugin>
+
+    </model>
+
+    <!--
+      ALVO: a bola que a câmera simulada informa como alvo_x, alvo_y.
+      Arraste com a ferramenta de mover (tecla T) e o robô vai atrás. É uma bola de
+      verdade, com colisão; o rodar_gazebo.sh manda a ponte parar a 0,11 m dela
+      (raio do robô + raio da bola), como no main_simulacao.
+    -->
+    <model name="alvo">
+      <pose>1.0 0.5 0.0215 0 0 0</pose>
+      <link name="link">
+        <inertial>
+          <mass>0.046</mass>
+          <inertia>  <!-- esfera maciça: 2/5 m r^2 -->
+            <ixx>0.0000085</ixx><iyy>0.0000085</iyy><izz>0.0000085</izz>
+            <ixy>0</ixy><ixz>0</ixz><iyz>0</iyz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><sphere><radius>0.0215</radius></sphere></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><sphere><radius>0.0215</radius></sphere></geometry>
+          <material><ambient>1 0.45 0 1</ambient><diffuse>1 0.45 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>
