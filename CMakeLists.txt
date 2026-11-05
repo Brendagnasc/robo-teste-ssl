@@ -24,6 +24,10 @@ target_link_libraries(simulacao PRIVATE controle)
 add_executable(teste_entrada src/teste_entrada_visao.cpp)
 target_link_libraries(teste_entrada PRIVATE controle)
 
+# Visão travada, robô preso, motor invertido: o robô tem que parar
+add_executable(teste_seguranca src/teste_seguranca.cpp)
+target_link_libraries(teste_seguranca PRIVATE controle)
+
 # Ponte: visão (UDP) -> controle -> robô (USB serial)
 add_executable(ponte_serial src/ponte_serial.cpp)
 target_link_libraries(ponte_serial PRIVATE controle)
