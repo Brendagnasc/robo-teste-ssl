@@ -271,13 +271,14 @@ int main(int argc, char** argv) {
         if (verboso && t_log >= 0.5f) {
             t_log = 0.0f;
             std::printf("%-12s d=%.3f m  erro=%+.1f deg  v=%.2f m/s  visao: %d ok / %d ruins / "
-                        "%d repetidos, idade %.0f ms  rodas: %.2f %.2f %.2f%s\n",
+                        "%d repetidos, idade %.0f ms  rodas: %.2f %.2f %.2f%s%s\n",
                         nome_estado(robo.estado()), robo.distancia(),
                         rad_para_grau(robo.erro_angulo()), robo.velocidade_linear(),
                         entrada.medidas_aceitas(), entrada.medidas_descartadas(),
                         entrada.medidas_congeladas(), entrada.pose().idade_s * 1000.0f,
                         c.v[RODA_ESQ], c.v[RODA_DIR], c.v[RODA_TRAS],
-                        entrada.visao_congelada() ? "  [VISAO TRAVADA]" : "");
+                        entrada.visao_congelada() ? "  [VISAO TRAVADA]" : "",
+                        robo.falha_movimento() ? "  [SEM MOVIMENTO: parado]" : "");
             std::fflush(stdout);
         }
 
