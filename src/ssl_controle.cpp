@@ -152,6 +152,8 @@ LimitesDinamicos ControladorSSL::calcular_inercia_e_limites() {
  * ======================================================================== */
 void ControladorSSL::atualizar_visao(float x_robo, float y_robo, float theta_robo,
                                      float x_alvo, float y_alvo) {
+    // Giro acumulado por incrementos: não sofre com a volta em +-pi
+    if (visao_ok_) giro_medido_ += normalizar_angulo(theta_robo - theta_);
     x_ = x_robo;
     y_ = y_robo;
     theta_ = normalizar_angulo(theta_robo);
@@ -254,7 +256,18 @@ ComandoRodas ControladorSSL::tomar_decisao(float dt) {
 
     // Segurança: limites inválidos ou visão perdida -> para suavemente
     if (!limites_.valido || !visao_ok_ || tempo_sem_visao_ > ctrl_.timeout_visao_s) {
+        verif_modo_ = Verificando::NADA;
         return parar_com_rampa(dt);
+    }
+
+    // Comandou movimento e a visão não mostrou: para e espera antes de tentar de novo
+    if (falha_movimento_) {
+        espera_falha_ -= dt;
+        if (espera_falha_ > 0.0f || estado_ != Estado::PARADO) {
+            verif_modo_ = Verificando::NADA;
+            return parar_com_rampa(dt);
+        }
+        falha_movimento_ = false;
     }
 
     const float d_rest = distancia_ - ctrl_.dist_parada_m;   // quanto falta andar
@@ -332,7 +345,64 @@ ComandoRodas ControladorSSL::tomar_decisao(float dt) {
     }
     }
 
+    verificar_movimento(dt);
     return montar_comando();
+}
+
+/**
+ * Checagem de movimento: o controle confia na visão para saber onde está. Se a visão
+ * travar repetindo a mesma pose, ou se o robô estiver preso, o erro nunca diminui e a
+ * FSM acelera até v_max sem nunca chegar. Aqui se compara o que foi comandado com o
+ * que a visão mostrou numa janela:
+ *   translação: deslocamento projetado no rumo inicial  vs  integral de v
+ *   giro:       soma dos incrementos de theta            vs  integral de w
+ * Com sinal: roda andando para o lado errado também conta como falha.
+ * Só verifica acima de v/w mínimos, onde o movimento esperado é bem maior que o ruído.
+ */
+void ControladorSSL::verificar_movimento(float dt) {
+    Verificando modo = Verificando::NADA;
+    float comando = 0.0f;
+    if ((estado_ == Estado::DESLOCAMENTO || estado_ == Estado::FRENAGEM) &&
+        std::fabs(v_) >= ctrl_.v_min_verificacao) {
+        modo = Verificando::TRANSLACAO;
+        comando = v_;
+    } else if (estado_ == Estado::ALINHAMENTO && std::fabs(w_giro_) >= ctrl_.w_min_verificacao) {
+        modo = Verificando::GIRO;
+        comando = w_giro_;
+    }
+
+    if (modo != verif_modo_) {                 // começou, acabou ou trocou: nova janela
+        verif_modo_ = modo;
+        verif_t_ = 0.0f;
+        verif_esperado_ = 0.0f;
+        verif_x0_ = x_; verif_y0_ = y_; verif_theta0_ = theta_;
+        giro_medido_ = 0.0f;
+    }
+    if (modo == Verificando::NADA) return;
+
+    verif_t_ += dt;
+    verif_esperado_ += comando * dt;
+    if (verif_t_ < ctrl_.janela_verificacao_s) return;
+
+    float medido;
+    if (modo == Verificando::TRANSLACAO) {
+        medido = (x_ - verif_x0_) * std::cos(verif_theta0_) + (y_ - verif_y0_) * std::sin(verif_theta0_);
+    } else {
+        medido = giro_medido_;
+    }
+    // Movimento visto no sentido do comando, como fração do comandado
+    const float visto = medido * sinal(verif_esperado_);
+    if (visto < ctrl_.fracao_movimento_min * std::fabs(verif_esperado_)) {
+        falha_movimento_ = true;
+        espera_falha_ = ctrl_.espera_falha_s;
+        ++n_falhas_movimento_;
+    }
+
+    // Próxima janela começa daqui
+    verif_t_ = 0.0f;
+    verif_esperado_ = 0.0f;
+    verif_x0_ = x_; verif_y0_ = y_; verif_theta0_ = theta_;
+    giro_medido_ = 0.0f;
 }
 
 /** Visão perdida: reduz a velocidade do grupo de rodas ativo com a rampa e entra em PARADO. */

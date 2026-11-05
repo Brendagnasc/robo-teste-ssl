@@ -34,7 +34,24 @@ void EntradaVisao::converter_ponto(float x_cru, float y_cru, float& x, float& y)
     converter(x_cru, y_cru, 0.0f, x, y, ignorado);
 }
 
-bool EntradaVisao::nova_medida(float x_cru, float y_cru, float theta_cru) {
+bool EntradaVisao::nova_medida(float x_cru, float y_cru, float theta_cru, float latencia_s) {
+    // Frame idêntico ao anterior não traz informação nova: é tratado como frame perdido
+    // (a estimativa segue pela predição e a pose envelhece). Aceitá-lo puxaria a pose
+    // para o ponto travado e o controle aceleraria achando que o robô parou.
+    // Compara os valores crus, antes de qualquer conversão. Fica de fora do
+    // reiniciar(): depois do timeout o filtro reinicia, mas o mesmo frame repetido não
+    // pode ser adotado como "primeiro frame" e religar o robô.
+    if (x_cru == ultimo_cru_[0] && y_cru == ultimo_cru_[1] && theta_cru == ultimo_cru_[2]) {
+        ++iguais_seguidos_;
+        ++congeladas_;
+        return false;
+    } else {
+        iguais_seguidos_ = 0;
+        ultimo_cru_[0] = x_cru;
+        ultimo_cru_[1] = y_cru;
+        ultimo_cru_[2] = theta_cru;
+    }
+
     float zx, zy, zt;
     converter(x_cru, y_cru, theta_cru, zx, zy, zt);
 
@@ -59,9 +76,10 @@ bool EntradaVisao::nova_medida(float x_cru, float y_cru, float theta_cru) {
     // Recua a estimativa pela latência, compara, corrige e projeta de volta para agora.
     // Comparar direto com a estimativa atual geraria um resíduo sempre negativo
     // (da ordem de v * latencia) e o filtro subestimaria a velocidade.
-    const float x_med = pose_.x - pose_.vx * cfg_.latencia_s;
-    const float y_med = pose_.y - pose_.vy * cfg_.latencia_s;
-    const float t_med = normalizar_angulo(pose_.theta - pose_.omega * cfg_.latencia_s);
+    const float lat = (latencia_s >= 0.0f) ? latencia_s : cfg_.latencia_s;
+    const float x_med = pose_.x - pose_.vx * lat;
+    const float y_med = pose_.y - pose_.vy * lat;
+    const float t_med = normalizar_angulo(pose_.theta - pose_.omega * lat);
 
     const float rx = zx - x_med;
     const float ry = zy - y_med;
@@ -94,9 +112,9 @@ bool EntradaVisao::nova_medida(float x_cru, float y_cru, float theta_cru) {
     pose_.omega += cfg_.beta_angulo * rt / dt_medida_;
 
     // Projeta de volta para o instante atual, já com a velocidade corrigida
-    pose_.x = x_corr + pose_.vx * cfg_.latencia_s;
-    pose_.y = y_corr + pose_.vy * cfg_.latencia_s;
-    pose_.theta = normalizar_angulo(t_corr + pose_.omega * cfg_.latencia_s);
+    pose_.x = x_corr + pose_.vx * lat;
+    pose_.y = y_corr + pose_.vy * lat;
+    pose_.theta = normalizar_angulo(t_corr + pose_.omega * lat);
 
     pose_.valida = true;
     pose_.idade_s = 0.0f;

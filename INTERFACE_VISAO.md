@@ -44,10 +44,26 @@ pose <x> <y> <theta> <alvo_x> <alvo_y> <t>
 Se preferirem protobuf ou JSON, funciona igual: a conversão fica do nosso lado, em um
 único arquivo (`entrada_visao.cpp`). O que não pode mudar é o conjunto de campos.
 
+A outra opção, e a que preferimos, é publicar no formato da liga: `SSL_WrapperPacket`
+em multicast `224.5.23.2:10020`, como o SSL-Vision. A ponte já lê esse formato
+(`--entrada ssl`), e a IA do time também. Os `.proto` estão em `proto/`. Nesse caso:
+
+- `x`, `y` em mm e `orientation` em rad, cada robô com `robot_id` e `confidence`;
+- o nosso robô vai em `robots_blue` com id 0 (ou o que combinarmos);
+- a bola, ou o objeto alvo, vai em `balls`;
+- `t_capture` é quando a imagem chegou e `t_sent` é quando o pacote saiu, os dois no
+  relógio do PC de vocês. Usamos a diferença para saber o processamento de cada frame.
+
 Quando o robô ou a bola não for detectado no frame, **não mandem o último valor
 conhecido**. Ou omitam o campo, ou mandem `confianca = 0`. Repetir a última posição
 como se fosse nova nos impede de distinguir "parado" de "perdido", e nosso controle
 precisa dessa diferença para acionar a parada de segurança.
+
+Do nosso lado, frames com `x`, `y` e `theta` **idênticos** aos do frame anterior são
+tratados como repetidos (visão travada): não contam como medida nova, e com 6 seguidos
+o robô freia. Câmera real sempre tem ruído, então isso não acontece com dado de
+verdade, desde que vocês **não arredondem** a pose (mandem com pelo menos 0,1 mm e
+0,001 rad de resolução, sem filtro que "segure" o valor quando o robô está parado).
 
 ## 4. O que fazemos com o dado, e por que a latência importa
 

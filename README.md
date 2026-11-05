@@ -22,9 +22,14 @@ isso na inicialização e se recusa a mover com geometria inválida.
 
 ```
 visão (outro grupo)  --UDP 5005-->  ponte_serial  --USB serial-->  firmware_robo
-                                         |
+SSL-Vision / grSim   --multicast-->       |
+                     224.5.23.2:10020     |
                             EntradaVisao + ControladorSSL
 ```
+
+A ponte aceita duas entradas: a linha de texto `pose ...` do contrato com o outro grupo
+(padrão) ou, com `--entrada ssl`, o `SSL_WrapperPacket` que o SSL-Vision, o grSim e o
+ER-Force mandam. Ver [Entrada no formato da liga](#entrada-no-formato-da-liga).
 
 - visão: 30 ou 60 Hz, com latência;
 - controle: 200 Hz;
@@ -37,10 +42,17 @@ visão (outro grupo)  --UDP 5005-->  ponte_serial  --USB serial-->  firmware_rob
 | `include/ssl_controle.hpp`, `src/ssl_controle.cpp` | física (inércia, aderência, tombamento), rampas de aceleração constante e máquina de estados |
 | `include/entrada_visao.hpp`, `src/entrada_visao.cpp` | conversão de unidades, filtro alfa-beta, compensação de latência, rejeição de deteção errada |
 | `src/ponte_serial.cpp` | recebe UDP, roda o controle a 200 Hz, envia os quadros pela serial |
+| `include/visao_ssl.hpp`, `src/visao_ssl.cpp` | lê o `SSL_WrapperPacket` (time, id, confiança, tempo de processamento) e abre o multicast |
+| `proto/` | `.proto` da visão copiados do SSL-Vision |
 | `src/main_simulacao.cpp` | planta simulada + controle, sem hardware |
 | `src/teste_entrada_visao.cpp` | mede o ganho da camada de entrada contra a pose crua |
+| `src/teste_seguranca.cpp` | visão travada, robô preso, motor invertido: confere que o robô para |
+| `src/teste_visao_ssl.cpp` | leitura dos pacotes SSL e ganho da latência por frame |
 | `firmware/firmware_robo/` | sketch Arduino: interpreta os quadros, aciona as pontes H, watchdog |
 | `testes/teste_ponte.py` | teste de ponta a ponta com porta serial virtual (pty) |
+| `simulacao/robo_teste.sdf` | mundo e robô do Gazebo, com os números do `ParametrosFisicos` |
+| `simulacao/robo_simulado.cpp` | plugin do Gazebo no lugar do hardware: firmware, motores A/I/F e câmera |
+| `simulacao/rodar_gazebo.sh` | sobe o Gazebo e liga nele a `ponte_serial` de verdade |
 
 ## Máquina de estados
 
@@ -66,7 +78,11 @@ cmake -B build && cmake --build build
 
 ./build/simulacao                       # controle contra planta simulada
 ./build/teste_entrada                   # ganho da camada de entrada
+./build/teste_seguranca                 # proteções contra o robô fugir (sai com 1 se falhar)
+./build/teste_visao_ssl                 # leitura do protobuf da liga (sai com 1 se falhar)
 python3 testes/teste_ponte.py           # ponta a ponta, com serial virtual
+python3 testes/teste_ponte.py --ssl     # idem, com a visão em protobuf no multicast
+./simulacao/rodar_gazebo.sh             # ponte_serial contra o robô no Gazebo (ver abaixo)
 
 # com o robô por cabo
 ./build/ponte_serial --serial /dev/ttyACM0 --milimetros --latencia 0.045
@@ -74,9 +90,85 @@ python3 testes/teste_ponte.py           # ponta a ponta, com serial virtual
 # com o robô por Bluetooth (HC-05)
 ./scripts/bluetooth_conectar.sh 98:D3:31:XX:XX:XX
 ./build/ponte_serial --serial /dev/rfcomm0 --bluetooth --milimetros --latencia 0.045
+
+# com a visão no formato da liga (SSL-Vision, grSim)
+./build/ponte_serial --serial /dev/ttyACM0 --entrada ssl --time azul --id 0
 ```
 
 No WSL, `/dev/ttyACM0` só aparece depois de anexar o dispositivo com `usbipd-win`.
+
+## Entrada no formato da liga
+
+Com `--entrada ssl` a ponte entra no grupo `224.5.23.2:10020` e lê o `SSL_WrapperPacket`.
+Assim o mesmo controle roda com o SSL-Vision e uma câmera de verdade, com o grSim ou
+com a visão do outro grupo, se ela publicar nesse formato. É também o que a IA do
+`ssl-robot` já consome, então visão, IA e robô passam a falar a mesma coisa.
+
+- o robô seguido é o `--id` do `--time` (azul ou amarelo); o alvo é a bola;
+- posição em mm, convertida sozinha. A origem é o centro do campo;
+- cada câmera manda o seu pacote. A ponte fica com a deteção mais recente do robô e
+  da bola, mesmo que venham de câmeras diferentes. Sem bola no frame, o alvo continua
+  sendo a última posição vista;
+- deteção abaixo de `--confianca-min` (0,3) é ignorada; com o mesmo id duas vezes no
+  frame, fica a mais confiável;
+- latência de cada frame: o `--latencia` mais `t_sent - t_capture` do pacote. Essa
+  diferença é o processamento da visão, medido no relógio dela, então vale mesmo com os
+  PCs fora de sincronia. Nesse modo, `--latencia` é só o que o pacote não vê: exposição
+  da câmera e rede. Com o atraso variando de 15 a 65 ms, isso tira o erro da pose de
+  19 mm para 5 mm (`teste_visao_ssl`);
+- `--grupo`, `--porta-udp` e `--interface` trocam o endereço e a placa de rede, para
+  quando a visão roda em outro PC.
+
+Precisa do `libprotobuf-dev`; sem ele o `cmake` compila a ponte só com a entrada de texto.
+
+No grSim, ligue `Gaussian noise` nas configurações. Sem ruído, o robô parado sai com a
+pose idêntica em todo frame, a ponte entende como visão travada e não deixa ele andar.
+Com o ruído ligado, a ponte acompanha o robô e a bola certinho (conferido movendo a bola
+pelo grSim). O robô do grSim não anda, porque a ponte manda os comandos pela serial e não
+para ele, então o log mostra `[SEM MOVIMENTO: parado]`, como esperado.
+
+## Simulação no Gazebo
+
+O plugin `robo_simulado` faz o papel do hardware, então a `ponte_serial` roda contra o
+Gazebo sem nenhuma mudança, pela mesma serial e pelo mesmo UDP do robô real:
+
+```
+ponte_serial --serial /tmp/robo_teste_serial --pty--> firmware simulado --torque--> rodas
+     ^                                                                               |
+     +---------------- UDP 5005 "pose ..." (60 Hz, 40 ms, 2 mm) <---- câmera simulada <-+
+```
+
+```bash
+./simulacao/rodar_gazebo.sh                # com janela: arraste a bola (tecla T) e o robô vai atrás
+./simulacao/rodar_gazebo.sh --sem-janela   # só o servidor, mais leve
+./simulacao/rodar_gazebo.sh --sem-ponte    # só o robô, para comandar com o testes/robo_bancada.py
+```
+
+Precisa do Gazebo Harmonic; sem ele, o `cmake` só pula o plugin.
+
+- firmware: quadros `#V` e `#P`, checksum, velocidade zero virando inércia e watchdog,
+  como no `firmware_robo.ino`;
+- motores: torque calculado a cada passo de 1 ms, saturado em 0,32 N·m. Inércia é torque
+  zero, com a roda livre de verdade, o que o `JointController` do Gazebo não oferece;
+- câmera: taxa, atraso, ruído, perda de frame e deteção errada ajustáveis no `.sdf`.
+
+Medido sem janela, com a bola em (1,0; 0,5): o robô alinha 25 graus em 0,4 s, acelera a
+~2,9 m/s², anda a 0,89 m/s e para a 0,12 m da bola (alvo: 0,11). Com a bola atrás dele,
+gira 133 graus em cerca de 1 s só com a traseira (até 5 rad/s), as laterais livres.
+
+Cuidados:
+
+- o controle calcula `v_max` de 3,0 m/s pelo `ParametrosFisicos`, mas o firmware satura
+  em `V_MAX_MM_S` (900 mm/s). No simulador a ponte chega a pedir 1,9 m/s e o robô fica em
+  0,89. Depois de medir o `V_MAX_MM_S` real, limite o controle a ele (`v_max_estrategia`);
+- em inércia o robô desliza bastante, porque o único atrito é o `<friction>` de
+  0,001 N·m das juntas. Mais atrito encurta a deslizada, mas também freia o giro: as
+  laterais giram livres quando a traseira vira o robô. Meça no robô real quanto ele
+  desliza com os motores cortados;
+- `ganho_Nms` acima de 0,036 faz o laço da roda divergir e o Gazebo abortar. Era o que
+  fechava a simulação com o `p_gain` 0,2 dos `JointController`;
+- no WSL com duas placas de vídeo, o OpenGL pode cair na integrada:
+  `MESA_D3D12_DEFAULT_ADAPTER_NAME=NVIDIA` força a NVIDIA.
 
 ## Canal de comando: cabo ou Bluetooth
 
@@ -120,14 +212,21 @@ Sem compensar a zona morta, os comandos lentos da frenagem não movem o robô.
 
 ## Segurança
 
-- sem frame da visão por 150 ms: a pose vence e o controle freia com rampa;
+- sem frame da visão por 100 ms: o controle freia com rampa;
+- visão travada (pose idêntica repetida): frame repetido conta como perdido, e com
+  6 seguidos (~100 ms) o controle freia na hora. Sem isso, a pose parada parece
+  "robô longe do alvo" e o controle acelera até a velocidade máxima;
+- comandou movimento e a visão não mostrou: se em 300 ms a visão não mostra pelo
+  menos 25% do deslocamento ou giro comandado, no sentido certo, o robô para e espera
+  1 s. Pega robô preso, roda patinando e motor ligado ao contrário;
 - sem quadro serial por 200 ms: o watchdog do firmware coloca tudo em inércia;
 - salto impossível na visão: descartado, e aceito se repetir três vezes seguidas.
 
 ## Estado atual
 
 Feito: física e limites, FSM, camada de entrada da visão, ponte serial, firmware em
-malha aberta, testes de simulação e de ponta a ponta.
+malha aberta, testes de simulação e de ponta a ponta, o robô no Gazebo comandado pela
+ponte de verdade e a entrada no formato da liga (SSL-Vision/grSim).
 
 Próximos passos: PID de velocidade por roda quando confirmarmos os encoders, camada de
 decisão acima da FSM (escolha de alvo) e desvio de obstáculos.
