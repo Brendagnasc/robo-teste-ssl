@@ -78,8 +78,10 @@ public:
     /**
      * Chamar quando chegar um frame da visão, com os valores crus, nas unidades dela.
      * Devolve false se a medida foi descartada como deteção errada ou como frame repetido.
+     * latencia_s: atraso deste frame, quando a visão manda o tempo de cada um.
+     * Negativo usa o latencia_s do ConfigEntrada.
      */
-    bool nova_medida(float x_cru, float y_cru, float theta_cru);
+    bool nova_medida(float x_cru, float y_cru, float theta_cru, float latencia_s = -1.0f);
 
     /** Chamar todo ciclo de controle. Propaga a estimativa e envelhece a medida. */
     void avancar(float dt);
