@@ -274,6 +274,9 @@ ele, o controle tira o teto do rpm do motor e da redução e planeja velocidades
 roda não entrega, tanto andando quanto girando pela traseira. Com ele, o controle usa
 80% disso (`fator_seguranca`), e a sobra cobre a correção de rumo sem saturar a roda.
 
+O roteiro completo do primeiro teste com câmera e robô, das medidas à IA rodando, está
+em [TESTE_ROBO_REAL.md](TESTE_ROBO_REAL.md).
+
 ## Segurança
 
 - sem frame da visão por 100 ms: o controle freia com rampa;
