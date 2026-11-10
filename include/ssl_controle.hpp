@@ -67,6 +67,7 @@ struct ParametrosFisicos {
     float rpm_motor_max        = 5000.0f; // rotação máxima no eixo do motor
     float reducao              = 3.6f;    // motor gira 3,6x mais rápido que a roda
     float eficiencia           = 0.9f;    // eficiência da transmissão
+    float v_roda_max_medida    = 0.0f;    // V_MAX_MM_S do firmware em m/s; 0 = calcula por rpm e redução
 
     // Segurança
     float fator_seguranca      = 0.8f;    // usa só 80% dos limites calculados

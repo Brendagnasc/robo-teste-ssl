@@ -114,9 +114,13 @@ LimitesDinamicos ControladorSSL::calcular_inercia_e_limites() {
     L.normal_traseira_N = peso * xcg / Lt;
     L.normal_lateral_N  = peso - L.normal_traseira_N;
 
-    // Capacidade do motor refletida na roda
+    // Capacidade do motor refletida na roda. A velocidade medida no robô (V_MAX_MM_S)
+    // vence a conta: o firmware satura o PWM nela, e planejar acima disso é pedir uma
+    // velocidade que a roda não entrega, tanto andando quanto girando pela traseira.
     const float w_motor_max = p.rpm_motor_max * 2.0f * PI / 60.0f;          // rad/s no motor
-    const float v_roda_max  = (w_motor_max / p.reducao) * p.raio_roda_m;    // m/s no chão
+    const float v_roda_max  = (p.v_roda_max_medida > 0.0f)
+        ? p.v_roda_max_medida
+        : (w_motor_max / p.reducao) * p.raio_roda_m;                         // m/s no chão
     const float F_roda      = p.torque_motor_max_Nm * p.reducao * p.eficiencia / p.raio_roda_m;
 
     // (3) Aceleração
