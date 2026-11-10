@@ -19,6 +19,13 @@
  *     ./ponte_serial --serial /dev/ttyACM0 --baud 115200 --porta-udp 5005
  *     ./ponte_serial --serial /dev/rfcomm0 --bluetooth          (HC-05 pareado)
  *     ./ponte_serial --serial /dev/ttyACM0 --entrada ssl --time azul --id 0
+ *     ./ponte_serial --serial /dev/ttyACM0 --v-roda-max 0.9     (V_MAX_MM_S de 900 mm/s)
+ *
+ * Velocidade da roda: o firmware satura o PWM em V_MAX_MM_S, então nenhuma roda passa
+ * disso. Sem --v-roda-max o controle calcula o teto pelo rpm do motor e pela redução, e
+ * pode planejar velocidades que a roda não entrega. Passe o mesmo valor do firmware, em
+ * m/s; o controle usa o fator de segurança em cima dele (80%), o que sobra para a
+ * correção de rumo sem saturar a roda.
  *
  * Entrada da visão: "texto" (padrão) é a linha "pose ..." do INTERFACE_VISAO.md, em UDP
  * 5005. "ssl" é o SSL_WrapperPacket no multicast da liga (224.5.23.2:10020), o mesmo do
@@ -199,7 +206,7 @@ Medida ler_ssl(int fd, const ConfigSSL& cfg, float latencia_base) {
 int main(int argc, char** argv) {
     std::string caminho_serial = "/dev/ttyACM0";
     int baud = 115200, porta_udp = 5005, hz_controle = 200, hz_serial = 100;
-    float dist_parada = 0.0f;
+    float dist_parada = 0.0f, v_roda_max = 0.0f;
     bool verboso = true, bluetooth = false;
 
     // Contrato com o grupo da visão (ver INTERFACE_VISAO.md)
@@ -227,7 +234,7 @@ int main(int argc, char** argv) {
                                a == "--hz" || a == "--hz-serial" || a == "--dist-parada" ||
                                a == "--latencia" || a == "--entrada" || a == "--grupo" ||
                                a == "--interface" || a == "--time" || a == "--id" ||
-                               a == "--confianca-min";
+                               a == "--confianca-min" || a == "--v-roda-max";
         if (!conhecida) {
             std::fprintf(stderr, "Opção desconhecida: %s\n", a.c_str());
             return 1;
@@ -250,6 +257,7 @@ int main(int argc, char** argv) {
         else if (a == "--time")         time_cor = valor;
         else if (a == "--id")           id_robo = std::atoi(valor);
         else if (a == "--confianca-min") confianca_min = (float)std::atof(valor);
+        else if (a == "--v-roda-max")   v_roda_max = (float)std::atof(valor);
     }
     if (entrada_tipo != "texto" && entrada_tipo != "ssl") {
         std::fprintf(stderr, "--entrada precisa ser texto ou ssl\n");
@@ -285,9 +293,14 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "--hz e --hz-serial precisam ser maiores que zero\n");
         return 1;
     }
+    if (v_roda_max < 0.0f) {
+        std::fprintf(stderr, "--v-roda-max precisa ser positivo (m/s)\n");
+        return 1;
+    }
 
     // Parâmetros do robô de teste: ajuste massa, bitola e rodas aos valores medidos
     ParametrosFisicos fis;
+    fis.v_roda_max_medida = v_roda_max;
     ParametrosControle ctrl;
     ctrl.dist_parada_m = dist_parada;
     ControladorSSL robo(fis, ctrl);
@@ -316,6 +329,9 @@ int main(int argc, char** argv) {
     if (entrada_ssl) {
         std::printf("visao: SSL multicast %s:%d, robo %s %d, confianca >= %.2f\n",
                     grupo.c_str(), porta_udp, time_cor.c_str(), id_robo, confianca_min);
+    }
+    if (v_roda_max > 0.0f) {
+        std::printf("roda limitada a %.2f m/s (V_MAX_MM_S do firmware)\n", v_roda_max);
     }
     std::printf("ponte ativa: UDP %d -> %s @ %d bps (%s, envio a %d Hz)\n"
                 "v_max %.2f m/s | a %.2f/%.2f m/s^2\n",
