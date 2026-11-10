@@ -63,9 +63,10 @@ if [ "$COM_PONTE" = 0 ]; then
     exit 0
 fi
 
-# Visão em milímetros e com 40 ms de atraso, como o plugin manda, e parada a 0,11 m da
-# bola (raio do robô + raio da bola). Opções repetidas depois de -- valem por cima destas.
+# Visão em milímetros e com 40 ms de atraso, como o plugin manda; roda no máximo a
+# 0,9 m/s, o <v_max_m_s> do .sdf (V_MAX_MM_S); e parada a 0,11 m da bola (raio do robô
+# + raio da bola). Opções repetidas depois de -- valem por cima destas.
 "$RAIZ/build/ponte_serial" --serial "$SERIAL" --milimetros --latencia 0.040 \
-    --dist-parada 0.11 "$@" &
+    --v-roda-max 0.9 --dist-parada 0.11 "$@" &
 PONTE=$!
 wait -n "$GZ" "$PONTE" || true
