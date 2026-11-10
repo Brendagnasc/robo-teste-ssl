@@ -91,15 +91,17 @@ python3 testes/teste_ponte.py --ssl     # idem, com a visão em protobuf no mult
 ./simulacao/rodar_gazebo.sh             # ponte_serial contra o robô no Gazebo (ver abaixo)
 
 # com o robô por cabo
-./build/ponte_serial --serial /dev/ttyACM0 --milimetros --latencia 0.045
+./build/ponte_serial --serial /dev/ttyACM0 --milimetros --latencia 0.045 --v-roda-max 0.9
 
 # com o robô por Bluetooth (HC-05)
 ./scripts/bluetooth_conectar.sh 98:D3:31:XX:XX:XX
-./build/ponte_serial --serial /dev/rfcomm0 --bluetooth --milimetros --latencia 0.045
+./build/ponte_serial --serial /dev/rfcomm0 --bluetooth --milimetros --latencia 0.045 --v-roda-max 0.9
 
 # com a visão no formato da liga (SSL-Vision, grSim)
-./build/ponte_serial --serial /dev/ttyACM0 --entrada ssl --time azul --id 0
+./build/ponte_serial --serial /dev/ttyACM0 --entrada ssl --time azul --id 0 --v-roda-max 0.9
 ```
+
+`--v-roda-max` é o `V_MAX_MM_S` do firmware em m/s (ver Antes de ligar o robô).
 
 No WSL, `/dev/ttyACM0` só aparece depois de anexar o dispositivo com `usbipd-win`.
 
@@ -209,14 +211,15 @@ Precisa do Gazebo Harmonic; sem ele, o `cmake` só pula o plugin.
 - câmera: taxa, atraso, ruído, perda de frame e deteção errada ajustáveis no `.sdf`.
 
 Medido sem janela, com a bola em (1,0; 0,5): o robô alinha 25 graus em 0,4 s, acelera a
-~2,9 m/s², anda a 0,89 m/s e para a 0,12 m da bola (alvo: 0,11). Com a bola atrás dele,
-gira 133 graus em cerca de 1 s só com a traseira (até 5 rad/s), as laterais livres.
+~2,9 m/s², anda a 0,71 m/s (80% dos 0,9 m/s da roda) e para a 0,12 m da bola (alvo: 0,11,
+com a tolerância de 2 cm do `tol_posicao_m`). Com a bola atrás dele, gira 133 graus em
+cerca de 1 s só com a traseira (até 5 rad/s), as laterais livres.
 
 Cuidados:
 
-- o controle calcula `v_max` de 3,0 m/s pelo `ParametrosFisicos`, mas o firmware satura
-  em `V_MAX_MM_S` (900 mm/s). No simulador a ponte chega a pedir 1,9 m/s e o robô fica em
-  0,89. Depois de medir o `V_MAX_MM_S` real, limite o controle a ele (`v_max_estrategia`);
+- o script passa `--v-roda-max 0.9` para a ponte, o mesmo `<v_max_m_s>` do `.sdf`. Sem
+  isso, o controle calcula `v_max` de 3,0 m/s pelo motor do `ParametrosFisicos` e chega a
+  pedir 1,9 m/s a rodas que só dão 0,9. Se mudar um, mude o outro;
 - em inércia o robô desliza bastante, porque o único atrito é o `<friction>` de
   0,001 N·m das juntas. Mais atrito encurta a deslizada, mas também freia o giro: as
   laterais giram livres quando a traseira vira o robô. Meça no robô real quanto ele
@@ -265,6 +268,11 @@ Duas medidas precisam ir para o firmware (constantes no topo do `.ino`):
 - `PWM_MINIMO`: PWM em que a roda começa a girar com o robô no chão.
 
 Sem compensar a zona morta, os comandos lentos da frenagem não movem o robô.
+
+O `V_MAX_MM_S` também vai para a ponte, em m/s: `--v-roda-max 0.9` para 900 mm/s. Sem
+ele, o controle tira o teto do rpm do motor e da redução e planeja velocidades que a
+roda não entrega, tanto andando quanto girando pela traseira. Com ele, o controle usa
+80% disso (`fator_seguranca`), e a sobra cobre a correção de rumo sem saturar a roda.
 
 ## Segurança
 
