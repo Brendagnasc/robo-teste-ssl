@@ -67,6 +67,7 @@ struct ParametrosFisicos {
     float rpm_motor_max        = 5000.0f; // rotação máxima no eixo do motor
     float reducao              = 3.6f;    // motor gira 3,6x mais rápido que a roda
     float eficiencia           = 0.9f;    // eficiência da transmissão
+    float v_roda_max_medida    = 0.0f;    // V_MAX_MM_S do firmware em m/s; 0 = calcula por rpm e redução
 
     // Segurança
     float fator_seguranca      = 0.8f;    // usa só 80% dos limites calculados
@@ -95,6 +96,15 @@ struct ParametrosControle {
 
     float timeout_visao_s        = 0.10f;  // sem visão por mais que isso: para com rampa
     bool  freio_ativo_parado     = true;   // PARADO: laterais em freio (segura empurrões)
+
+    // Checagem de movimento: comandando movimento por uma janela inteira, a visão
+    // precisa mostrar pelo menos uma fração dele, no sentido certo. Se não mostrar
+    // (visão travada, roda patinando, robô preso, motor ligado ao contrário), para.
+    float v_min_verificacao      = 0.30f;  // só verifica acima disso (m/s)
+    float w_min_verificacao      = 1.0f;   // idem para o giro (rad/s)
+    float janela_verificacao_s   = 0.30f;  // folga para a latência e a resposta do motor
+    float fracao_movimento_min   = 0.25f;  // precisa ver >= 25% do deslocamento comandado
+    float espera_falha_s         = 1.0f;   // depois de uma falha, fica parado esse tempo
 };
 
 /** Geometria do campo (padrão: Divisão A da SSL). */
@@ -160,6 +170,12 @@ public:
     void atualizar_visao(float x_robo, float y_robo, float theta_robo,
                          float x_alvo, float y_alvo);
 
+    /**
+     * A camada de entrada declarou a visão inválida (ex.: travada repetindo a pose).
+     * Freia na hora, sem esperar timeout_visao_s. Volta ao normal no próximo atualizar_visao().
+     */
+    void perder_visao() { visao_ok_ = false; }
+
     /** FSM. Chamar no laço de controle com período dt (ex.: 200 Hz -> dt = 0.005). */
     ComandoRodas tomar_decisao(float dt);
 
@@ -172,6 +188,9 @@ public:
     float  erro_angulo() const { return erro_angulo_; }
     float  velocidade_linear() const { return v_; }
     float  velocidade_giro() const { return w_giro_; }
+    /** true enquanto o robô está parado por não ter visto o movimento que comandou. */
+    bool   falha_movimento() const { return falha_movimento_; }
+    int    falhas_movimento() const { return n_falhas_movimento_; }
     const LimitesDinamicos& limites() const { return limites_; }
     const ComandoRodas& ultimo_comando() const { return comando_; }
 
@@ -183,6 +202,7 @@ private:
     ComandoRodas parar_com_rampa(float dt);
     ComandoRodas montar_comando();
     static float rampa(float atual, float alvo, float passo_max);
+    void  verificar_movimento(float dt);
 
     ParametrosFisicos  fis_;
     ParametrosControle ctrl_;
@@ -208,6 +228,17 @@ private:
     float  w_corr_   = 0.0f;    // correção de rumo pelas laterais (rad/s)
     float  w_giro_   = 0.0f;    // velocidade angular pela roda traseira (rad/s)
     ComandoRodas comando_;
+
+    // Checagem de movimento (ver verificar_movimento)
+    enum class Verificando : uint8_t { NADA, TRANSLACAO, GIRO };
+    Verificando verif_modo_ = Verificando::NADA;
+    float  verif_t_ = 0.0f;
+    float  verif_x0_ = 0.0f, verif_y0_ = 0.0f, verif_theta0_ = 0.0f;
+    float  verif_esperado_ = 0.0f;     // integral do comando: m ou rad, com sinal
+    float  giro_medido_ = 0.0f;        // soma dos incrementos de theta vindos da visão
+    bool   falha_movimento_ = false;
+    float  espera_falha_ = 0.0f;
+    int    n_falhas_movimento_ = 0;
 };
 
 }  // namespace ssl
